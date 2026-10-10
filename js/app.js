@@ -2,12 +2,13 @@
 import { buildTrack, parseGpx, pointAtDistance, snap } from './gpx.js';
 import { createMap, fitRoute, setCursor, setMe, setRoute } from './map.js';
 import { createProfile } from './profile.js';
-import { downloadTiles, refreshOmtTemplate, tileUrlsForTrack } from './offline.js';
+import { downloadTiles, pruneTiles, refreshOmtTemplate, tileUrlsForTrack } from './offline.js';
 import { DEVIATION_METERS, matchToOsm } from './match.js';
 import { deleteRoute, getRoute, listRoutes, putRoute } from './store.js';
 
 const OFF_ROUTE_METERS = 75;
 const NEAR_ROUTE_METERS = 5000;
+const PROGRESS_MAX_AGE_MS = 12 * 3600 * 1000;
 const $ = id => document.getElementById(id);
 const state = { route: null, track: null, follow: false, prevDist: null, watchId: null, hadFix: false, lastCoords: null, downloading: new Set() };
 let map, profile;
@@ -52,10 +53,22 @@ function setFollow(on) {
 
 // ---------- Parcours ----------
 
+// Dernière position sur le parcours, gardée pour la retrouver si Android ferme l'appli pendant la sortie.
+const progressKey = id => `progress:${id}`;
+
+function saveProgress(dist) {
+  localStorage.setItem(progressKey(state.route.id), JSON.stringify({ dist, at: Date.now() }));
+}
+
+function loadProgress(id) {
+  const saved = JSON.parse(localStorage.getItem(progressKey(id)) || 'null');
+  return saved && Date.now() - saved.at < PROGRESS_MAX_AGE_MS ? saved.dist : null;
+}
+
 async function selectRoute(route) {
   state.route = route;
   state.track = buildTrack(route.points);
-  state.prevDist = null;
+  state.prevDist = loadProgress(route.id);
   localStorage.setItem('currentRoute', route.id);
   $('route-name').textContent = route.name;
   setRoute(map, state.track, route.waypoints || []);
@@ -84,8 +97,11 @@ async function importFile(file) {
 async function removeRoute(route) {
   if (!confirm(`Supprimer « ${route.name} » ?`)) return;
   await deleteRoute(route.id);
+  localStorage.removeItem(progressKey(route.id));
+  const remaining = await listRoutes();
+  await pruneTiles(remaining.flatMap(r => [r.points, r.originalPoints]).filter(Boolean).map(buildTrack));
   if (state.route?.id === route.id) {
-    const [next] = await listRoutes();
+    const [next] = remaining;
     if (next) await selectRoute(next);
     else location.reload();
   }
@@ -222,6 +238,7 @@ function updateProgress(coords) {
     return setStatus(`Vous êtes à ${fmtKm(s.offset)} du parcours`);
   }
   state.prevDist = s.dist;
+  saveProgress(s.dist);
   profile.setCurrent(s.dist);
   setStats(fmtKm(s.dist), fmtKm(t.totalDist - s.dist), fmtM(t.totalUp - s.up), fmtM(s.ele));
   if (s.offset > OFF_ROUTE_METERS) setStatus(`Hors trace · ${fmtM(s.offset)} de la trace`, true);

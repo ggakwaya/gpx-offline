@@ -9,6 +9,7 @@ const OMT_MAXZOOM = 14;
 const CORRIDOR_FROM_ZOOM = 11;
 const CORRIDOR_METERS = 1500;
 const BBOX_MARGIN_METERS = 3000;
+const TILE_CACHE = 'tiles-v1'; // même nom que dans sw.js
 
 let omtTemplate = localStorage.getItem('omtTemplate') || OMT_FALLBACK;
 
@@ -79,6 +80,19 @@ export function tileUrlsForTrack(track) {
   const dem = coverTrack(track, DEM_MAXZOOM, 1).map(([z, x, y]) => demUrl(z, x, y));
   const omt = coverTrack(track, OMT_MAXZOOM, 0).map(([z, x, y]) => omtUrl(z, x, y));
   return [...omt, ...dem];
+}
+
+// Même règle que tileKey() dans sw.js : la version OpenFreeMap ne fait pas partie de la clé.
+function cacheKey(url) {
+  return url.replace(/(tiles\.openfreemap\.org\/planet\/)[^/]+\//, '$1_/');
+}
+
+// Supprime du cache toutes les tuiles qui ne servent à aucune des traces données.
+export async function pruneTiles(tracks) {
+  const keep = new Set(tracks.flatMap(tileUrlsForTrack).map(cacheKey));
+  const cache = await caches.open(TILE_CACHE);
+  const stale = (await cache.keys()).filter(req => !keep.has(req.url));
+  await Promise.all(stale.map(req => cache.delete(req)));
 }
 
 export async function downloadTiles(urls, onProgress, concurrency = 6) {

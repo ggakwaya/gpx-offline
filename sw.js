@@ -1,6 +1,6 @@
 // Service worker : appli disponible hors ligne + cache des tuiles de carte et d'altitude.
 
-const SHELL_CACHE = 'shell-v3';
+const SHELL_CACHE = 'shell-v4';
 const TILE_CACHE = 'tiles-v1';
 const FONT_RANGES = ['0-255', '256-511', '8192-8447'];
 const FONTS = ['noto-regular', 'noto-bold', 'noto-italic']
