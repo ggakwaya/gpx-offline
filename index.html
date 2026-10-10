@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2b2622">
+  <title>Trace GPX</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="map"></div>
+
+  <header class="topbar">
+    <button id="menu-btn" class="icon-btn" aria-label="Parcours">☰</button>
+    <div id="route-name" class="route-name">Aucun parcours</div>
+    <button id="offline-badge" class="badge" hidden></button>
+  </header>
+
+  <div class="fabs">
+    <button id="locate-btn" class="fab" aria-label="Me suivre">
+      <svg viewBox="0 0 24 24" width="26" height="26"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/></svg>
+    </button>
+    <button id="fit-btn" class="fab" aria-label="Voir tout le parcours">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+  </div>
+
+  <section id="sheet" class="sheet">
+    <div class="stats">
+      <div><b id="s-done">–</b><span>Parcouru</span></div>
+      <div><b id="s-left">–</b><span>Restant</span></div>
+      <div><b id="s-up">–</b><span>D+ restant</span></div>
+      <div><b id="s-ele">–</b><span>Altitude</span></div>
+    </div>
+    <div id="status" class="status"></div>
+    <canvas id="profile"></canvas>
+  </section>
+
+  <div id="drawer-backdrop" class="backdrop" hidden></div>
+  <aside id="drawer" class="drawer" hidden>
+    <div class="drawer-head">
+      <h2>Mes parcours</h2>
+      <button id="drawer-close" class="icon-btn" aria-label="Fermer">✕</button>
+    </div>
+    <label class="btn primary">Importer un fichier GPX
+      <input id="file-input" type="file" accept=".gpx,application/gpx+xml,application/octet-stream" hidden>
+    </label>
+    <ul id="route-list" class="route-list"></ul>
+    <p class="hint">Téléchargez la carte d'un parcours sur le Wi-Fi avant de partir : elle restera disponible sans réseau.</p>
+    <p id="storage" class="hint"></p>
+  </aside>
+
+  <script src="vendor/maplibre-gl.js"></script>
+  <script src="vendor/maplibre-contour.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

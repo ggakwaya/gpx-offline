@@ -1,0 +1,12 @@
+# Parcours personnels : à importer dans l'appli, pas à publier
+gpx/
+
+.env
+.env.*
+*.log
+node_modules/
+.cache/
+dist/
+build/
+*.key
+*.pem
