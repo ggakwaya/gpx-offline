@@ -7,6 +7,22 @@ const ROUTE_COLOR = '#e6007e';
 const NAME = ['coalesce', ['get', 'name:fr'], ['get', 'name']];
 const EMPTY = { type: 'FeatureCollection', features: [] };
 
+// Points utiles, tirés de la couche poi d'OpenMapTiles (déjà présente dans les tuiles hors ligne).
+const POI_LABELS = { water: 'Eau potable', toilets: 'Toilettes', shelter: 'Abri', hut: 'Refuge / chalet', parking: 'Stationnement' };
+const HUTS = ['alpine_hut', 'wilderness_hut', 'chalet'];
+const POI_KIND = ['case',
+  ['==', ['get', 'class'], 'drinking_water'], 'water',
+  ['in', ['get', 'class'], ['literal', ['toilets', 'shelter', 'parking']]], ['get', 'class'],
+  ['in', ['get', 'subclass'], ['literal', HUTS]], 'hut',
+  ''];
+
+// Même règle que POI_KIND, pour un objet déjà affiché sur la carte.
+function poiKind({ class: cls, subclass }) {
+  if (cls === 'drinking_water') return 'water';
+  if (['toilets', 'shelter', 'parking'].includes(cls)) return cls;
+  return HUTS.includes(subclass) ? 'hut' : null;
+}
+
 // Les requêtes passent par le thread principal pour être servies par le service worker.
 function registerProtocols() {
   maplibregl.addProtocol('omt', async (params, abort) => {
@@ -101,6 +117,11 @@ function overlayLayers() {
     { id: 'route-arrows', type: 'symbol', source: 'route', minzoom: 12,
       layout: { 'symbol-placement': 'line', 'symbol-spacing': 90, 'icon-image': 'arrow',
         'icon-allow-overlap': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.5, 16, 0.8] } },
+    { id: 'poi', type: 'symbol', source: 'omt', 'source-layer': 'poi', minzoom: 13, filter: ['!=', POI_KIND, ''],
+      layout: { 'icon-image': ['concat', 'poi-', POI_KIND], 'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.75, 16, 1],
+        'text-field': ['step', ['zoom'], '', 15, NAME], 'text-font': ['noto-regular'], 'text-size': 11,
+        'text-anchor': 'top', 'text-offset': [0, 1.2], 'text-optional': true },
+      paint: { 'text-color': '#3b3026', 'text-halo-color': '#fff', 'text-halo-width': 1.4 } },
     { id: 'km', type: 'symbol', source: 'km',
       filter: ['any', ['==', ['%', ['get', 'km'], 5], 0], ['>=', ['zoom'], 14]],
       layout: { 'text-field': ['to-string', ['get', 'km']], 'text-font': ['noto-bold'], 'text-size': 11 },
@@ -150,7 +171,46 @@ function drawIcon(size, draw) {
   return c.getContext('2d').getImageData(0, 0, size, size);
 }
 
+function poiIcon(color, glyph) {
+  return drawIcon(48, (ctx, s) => {
+    ctx.beginPath(); ctx.arc(s / 2, s / 2, s / 2 - 3, 0, 2 * Math.PI);
+    ctx.fillStyle = color; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; ctx.lineJoin = 'round';
+    glyph(ctx, s);
+  });
+}
+
+const textGlyph = (text, size) => (ctx, s) => {
+  ctx.font = `bold ${size}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, s / 2, s / 2 + 1);
+};
+
+function polygonGlyph(points) {
+  return (ctx, s) => {
+    ctx.beginPath();
+    points.forEach(([x, y]) => ctx.lineTo(x * s, y * s));
+    ctx.closePath(); ctx.fill();
+  };
+}
+
+const POI_ICONS = {
+  water: ['#1976d2', (ctx, s) => {
+    ctx.beginPath(); ctx.moveTo(s / 2, s * 0.2);
+    ctx.bezierCurveTo(s * 0.74, s * 0.48, s * 0.72, s * 0.76, s / 2, s * 0.77);
+    ctx.bezierCurveTo(s * 0.28, s * 0.76, s * 0.26, s * 0.48, s / 2, s * 0.2); ctx.fill();
+  }],
+  toilets: ['#5c6bc0', textGlyph('WC', 17)],
+  parking: ['#1565c0', textGlyph('P', 26)],
+  shelter: ['#8d6e63', (ctx, s) => {
+    ctx.beginPath(); ctx.moveTo(s * 0.2, s * 0.56); ctx.lineTo(s / 2, s * 0.26); ctx.lineTo(s * 0.8, s * 0.56); ctx.stroke();
+    ctx.fillRect(s * 0.3, s * 0.52, 4, s * 0.24); ctx.fillRect(s * 0.7 - 4, s * 0.52, 4, s * 0.24);
+  }],
+  hut: ['#6d4c41', polygonGlyph([[0.5, 0.22], [0.8, 0.5], [0.7, 0.5], [0.7, 0.77], [0.3, 0.77], [0.3, 0.5], [0.2, 0.5]])],
+};
+
 function addIcons(map) {
+  Object.entries(POI_ICONS).forEach(([kind, [color, glyph]]) =>
+    map.addImage(`poi-${kind}`, poiIcon(color, glyph), { pixelRatio: 2 }));
   map.addImage('arrow', drawIcon(32, (ctx, s) => {
     ctx.beginPath(); ctx.moveTo(s * 0.3, s * 0.2); ctx.lineTo(s * 0.75, s * 0.5); ctx.lineTo(s * 0.3, s * 0.8);
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
@@ -221,4 +281,17 @@ export function setMe(map, coords) {
 
 export function setCursor(map, p) {
   map.getSource('cursor').setData(p ? point(p.lon, p.lat) : EMPTY);
+}
+
+// Point utile sous le doigt (tolérance de 14 px), ou null.
+export function poiAt(map, point) {
+  const box = [[point.x - 14, point.y - 14], [point.x + 14, point.y + 14]];
+  const [f] = map.queryRenderedFeatures(box, { layers: ['poi'] });
+  const kind = f && poiKind(f.properties);
+  return kind ? { label: POI_LABELS[kind], name: f.properties['name:fr'] || f.properties.name || '' } : null;
+}
+
+export function showPopup(map, lngLat, content) {
+  return new maplibregl.Popup({ closeButton: false, offset: 14, maxWidth: '240px' })
+    .setLngLat(lngLat).setDOMContent(content).addTo(map);
 }

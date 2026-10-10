@@ -33,7 +33,7 @@
       <div><b id="s-done">–</b><span>Parcouru</span></div>
       <div><b id="s-left">–</b><span>Restant</span></div>
       <div><b id="s-up">–</b><span>D+ restant</span></div>
-      <div><b id="s-ele">–</b><span>Altitude</span></div>
+      <div><b id="s-time">–</b><span>Temps restant</span></div>
     </div>
     <div id="status" class="status"></div>
     <canvas id="profile"></canvas>
@@ -49,8 +49,14 @@
       <input id="file-input" type="file" accept=".gpx,application/gpx+xml,application/octet-stream" hidden>
     </label>
     <ul id="route-list" class="route-list"></ul>
+    <div class="setting">
+      <label for="speed-input">Vitesse moyenne sur le plat</label>
+      <span><input id="speed-input" type="number" inputmode="decimal" min="5" max="60" step="1"> km/h</span>
+    </div>
+    <p class="hint">Temps restant estimé : distance ÷ vitesse, plus 1 h par 1000 m de D+.</p>
+    <p class="hint">Touchez la trace pour voir le km et l'altitude d'un point ; sur une boucle, « Partir d'ici » en fait le départ.</p>
     <p class="hint">Téléchargez la carte d'un parcours sur le Wi-Fi avant de partir : elle restera disponible sans réseau.</p>
-    <p class="hint">« Caler sur les chemins OSM » envoie la trace au serveur Valhalla de FOSSGIS (OpenStreetMap Allemagne).</p>
+    <p class="hint">« Caler sur OSM » envoie la trace au serveur Valhalla de FOSSGIS (OpenStreetMap Allemagne).</p>
     <p id="storage" class="hint"></p>
   </aside>
 

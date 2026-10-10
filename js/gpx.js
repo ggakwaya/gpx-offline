@@ -132,3 +132,49 @@ export function gradeAt(track, d, window = 100) {
   const run = b.dist - a.dist;
   return run > 0 ? ((b.ele - a.ele) / run) * 100 : 0;
 }
+
+// Montées significatives (≥ 30 m de gain, ≥ 2,5 % de moyenne). Un replat ou une descente
+// de moins de 15 m ne coupe pas une montée.
+export function findClimbs(track, { hysteresis = 15, minGain = 30, minGrade = 2.5, step = 25 } = {}) {
+  const samples = [];
+  for (let d = 0; d <= track.totalDist; d += step) samples.push(pointAtDistance(track, d));
+  const climbs = [];
+  const push = (lo, hi) => {
+    const gain = samples[hi].ele - samples[lo].ele;
+    const length = samples[hi].dist - samples[lo].dist;
+    if (gain >= minGain && (gain / length) * 100 >= minGrade) {
+      climbs.push({ start: samples[lo].dist, end: samples[hi].dist, gain, grade: (gain / length) * 100 });
+    }
+  };
+  let lo = 0, hi = 0, climbing = false;
+  for (let i = 1; i < samples.length; i++) {
+    const e = samples[i].ele;
+    if (!climbing) {
+      if (e < samples[lo].ele) lo = i;
+      else if (e - samples[lo].ele >= hysteresis) { climbing = true; hi = i; }
+    } else if (e > samples[hi].ele) {
+      hi = i;
+    } else if (samples[hi].ele - e >= hysteresis) {
+      push(lo, hi);
+      climbing = false;
+      lo = i;
+    }
+  }
+  if (climbing) push(lo, hi);
+  return climbs;
+}
+
+export function isLoop(points, maxGap = 300) {
+  const [a, b] = [points[0], points[points.length - 1]];
+  return haversine(a[0], a[1], b[0], b[1]) <= maxGap;
+}
+
+// Boucle qui commence au point de la trace le plus proche de (lon, lat).
+export function rotateLoop(points, lon, lat) {
+  let index = 0, best = Infinity;
+  points.forEach(([plon, plat], i) => {
+    const d = haversine(lon, lat, plon, plat);
+    if (d < best) { best = d; index = i; }
+  });
+  return points.slice(index).concat(points.slice(0, index));
+}
