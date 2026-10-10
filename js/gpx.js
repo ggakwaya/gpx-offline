@@ -98,8 +98,8 @@ export function snap(track, lon, lat, prevDist = null) {
     const score = prevDist === null ? d : Math.abs(d - prevDist);
     if (score < pickScore) { pickScore = score; pick = i; }
   }
-  const { t, offset } = segs[pick];
-  return { ...pointAtIndex(track, pick, t), offset };
+  // offset = distance réelle à la trace (passage le plus proche), même si un autre passage est retenu.
+  return { ...pointAtIndex(track, pick, segs[pick].t), offset: best };
 }
 
 function pointAtIndex(track, i, t) {

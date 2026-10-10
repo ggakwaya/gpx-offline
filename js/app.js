@@ -1,8 +1,9 @@
-// Point d'entrée : parcours, GPS, carte, profil et téléchargement hors ligne.
+// Point d'entrée : parcours, GPS, carte, profil, calage OSM et téléchargement hors ligne.
 import { buildTrack, parseGpx, pointAtDistance, snap } from './gpx.js';
 import { createMap, fitRoute, setCursor, setMe, setRoute } from './map.js';
 import { createProfile } from './profile.js';
 import { downloadTiles, refreshOmtTemplate, tileUrlsForTrack } from './offline.js';
+import { DEVIATION_METERS, matchToOsm } from './match.js';
 import { deleteRoute, getRoute, listRoutes, putRoute } from './store.js';
 
 const OFF_ROUTE_METERS = 75;
@@ -91,6 +92,42 @@ async function removeRoute(route) {
   await renderRouteList();
 }
 
+// ---------- Calage sur les chemins OSM ----------
+
+async function saveRouteChanges(route, changes) {
+  const fresh = { ...(await getRoute(route.id)), ...changes };
+  await putRoute(fresh);
+  if (state.route?.id === fresh.id) await selectRoute(fresh);
+  await renderRouteList();
+}
+
+async function snapRoute(route, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Calage en cours…';
+  try {
+    const { points, deviations } = await matchToOsm(route.points);
+    const ask = `La trace calée s'écarte de plus de ${DEVIATION_METERS} m de l'originale à ${deviations} endroit(s). La garder quand même ?`;
+    if (deviations && !confirm(ask)) return renderRouteList();
+    await saveRouteChanges(route, { points, originalPoints: route.points });
+  } catch (err) {
+    alert(`Calage impossible : ${err.message}`);
+    await renderRouteList();
+  }
+}
+
+function matchBlock(route) {
+  const btn = document.createElement('button');
+  btn.className = 'btn small';
+  if (route.originalPoints) {
+    btn.textContent = "Revenir à la trace d'origine";
+    btn.onclick = () => saveRouteChanges(route, { points: route.originalPoints, originalPoints: null });
+  } else {
+    btn.textContent = 'Caler sur les chemins OSM';
+    btn.onclick = () => snapRoute(route, btn);
+  }
+  return btn;
+}
+
 // ---------- Hors ligne ----------
 
 async function ensureServiceWorker() {
@@ -151,7 +188,8 @@ function routeItem(route) {
   pick.className = 'route-pick';
   pick.innerHTML = '<strong></strong><span class="route-meta"></span>';
   pick.querySelector('strong').textContent = route.name;
-  pick.querySelector('.route-meta').textContent = `${fmtKm(t.totalDist)} · D+ ${fmtM(t.totalUp)}`;
+  pick.querySelector('.route-meta').textContent =
+    `${fmtKm(t.totalDist)} · D+ ${fmtM(t.totalUp)}${route.originalPoints ? ' · calée sur OSM' : ''}`;
   pick.onclick = async () => { await selectRoute(route); await renderRouteList(); closeDrawer(); };
   const del = document.createElement('button');
   del.className = 'route-del';
@@ -159,7 +197,7 @@ function routeItem(route) {
   del.textContent = '🗑';
   del.onclick = () => removeRoute(route);
   row.append(pick, del);
-  li.append(row, offlineBlock(route));
+  li.append(row, matchBlock(route), offlineBlock(route));
   return li;
 }
 
