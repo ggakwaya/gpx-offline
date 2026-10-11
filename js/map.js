@@ -259,7 +259,7 @@ export function setRoute(map, track, waypoints) {
 // La marge s'ajoute à celle de la carte (barre du haut et panneau du bas).
 export function fitRoute(map, track) {
   const [w, s, e, n] = track.bbox;
-  map.fitBounds([[w, s], [e, n]], { padding: 30, duration: 0 });
+  map.fitBounds([[w, s], [e, n]], { padding: 30, bearing: 0, duration: 0 });
 }
 
 function accuracyCircle(lon, lat, meters) {
@@ -271,11 +271,13 @@ function accuracyCircle(lon, lat, meters) {
   return { type: 'Feature', properties: { kind: 'accuracy' }, geometry: { type: 'Polygon', coordinates: [ring] } };
 }
 
-export function setMe(map, coords) {
+// headingOverride : cap à afficher même à l'arrêt (boussole, en mode carte orientée).
+export function setMe(map, coords, headingOverride = null) {
   if (!coords) return map.getSource('me').setData(EMPTY);
   const { longitude: lon, latitude: lat, accuracy, heading, speed } = coords;
   const features = [accuracyCircle(lon, lat, accuracy), point(lon, lat, { kind: 'dot' })];
-  if (Number.isFinite(heading) && speed > 1) features.push(point(lon, lat, { kind: 'heading', heading }));
+  const h = headingOverride ?? (speed > 1 ? heading : null);
+  if (Number.isFinite(h)) features.push(point(lon, lat, { kind: 'heading', heading: h }));
   map.getSource('me').setData(collection(features));
 }
 

@@ -34,6 +34,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .fab { width: 52px; height: 52px; border: 0; border-radius: 50%; background: var(--paper); color: var(--muted);
   box-shadow: 0 2px 6px rgba(0,0,0,.3); display: grid; place-items: center; }
 .fab.active { color: var(--blue); }
+.fab[hidden] { display: none; }
+.fab .ico-heading, .fab.heading .ico-follow { display: none; }
+.fab.heading .ico-heading { display: block; }
+#north-needle { transition: transform .2s linear; }
 
 .sheet { position: fixed; left: 0; right: 0; bottom: 0; height: var(--sheet-h);
   padding: 8px 8px calc(env(safe-area-inset-bottom) + 4px); background: var(--paper);

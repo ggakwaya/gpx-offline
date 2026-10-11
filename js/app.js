@@ -2,6 +2,7 @@
 import { buildTrack, findClimbs, isLoop, parseGpx, pointAtDistance, rotateLoop, snap } from './gpx.js';
 import { createMap, fitRoute, poiAt, setCursor, setMe, setRoute, showPopup } from './map.js';
 import { createProfile } from './profile.js';
+import { angleDelta, startCompass, stopCompass } from './heading.js';
 import { downloadTiles, pruneTiles, refreshOmtTemplate, tileUrlsForTrack } from './offline.js';
 import { DEVIATION_METERS, matchToOsm } from './match.js';
 import { deleteRoute, getRoute, listRoutes, putRoute } from './store.js';
@@ -12,8 +13,11 @@ const PROGRESS_MAX_AGE_MS = 12 * 3600 * 1000;
 const DEFAULT_FLAT_SPEED = 20; // km/h
 const CLIMB_HOURS_PER_METER = 1 / 1000; // temps ajouté : 1 h par 1000 m de D+
 const TAP_TOLERANCE_PX = 24;
+const GPS_HEADING_MIN_SPEED = 2; // m/s (~7 km/h) : au-delà, le cap GPS est plus fiable que la boussole
+const GPS_HEADING_FRESH_MS = 3000;
+const ROTATE_INTERVAL_MS = 200;
 const $ = id => document.getElementById(id);
-const state = { route: null, track: null, climbs: [], follow: false, prevDist: null, watchId: null, hadFix: false, lastCoords: null, downloading: new Set() };
+const state = { route: null, track: null, climbs: [], mode: 'off', heading: null, lastRotate: 0, gpsHeadingAt: 0, prevDist: null, watchId: null, hadFix: false, lastCoords: null, downloading: new Set() };
 let map, profile;
 
 const kmNumber = m => (m / 1000).toFixed(1).replace('.', ',');
@@ -56,9 +60,50 @@ function renderBadge() {
   badge.className = `badge ${ok ? 'ok' : 'warn'}`;
 }
 
-function setFollow(on) {
-  state.follow = on;
-  $('locate-btn').classList.toggle('active', on);
+// Suivi de la position : 'off' (carte libre), 'north' (nord en haut) ou 'heading' (carte orientée).
+function mapPadding(mode) {
+  const top = 60 + (mode === 'heading' ? (window.innerHeight - sheetHeight() - 60) * 0.35 : 0);
+  return { top, bottom: sheetHeight(), left: 0, right: 0 };
+}
+
+const meCenter = () => [state.lastCoords.longitude, state.lastCoords.latitude];
+
+function setMode(mode) {
+  state.mode = mode;
+  $('locate-btn').classList.toggle('active', mode !== 'off');
+  $('locate-btn').classList.toggle('heading', mode === 'heading');
+  if (mode === 'heading' && !document.hidden) startCompass(onCompass);
+  else stopCompass();
+  if (mode === 'off') return;
+  localStorage.setItem('followMode', mode);
+  const camera = { padding: mapPadding(mode), duration: 300 };
+  if (mode === 'north') camera.bearing = 0;
+  if (mode === 'heading' && state.heading !== null) camera.bearing = state.heading;
+  if (state.lastCoords) camera.center = meCenter();
+  map.easeTo(camera);
+}
+
+// Tourne la carte vers le cap (au plus 5 fois par seconde, au-delà de 2° d'écart).
+function applyHeading(h) {
+  state.heading = h;
+  if (state.lastCoords) setMe(map, state.lastCoords, h);
+  const now = performance.now();
+  if (now - state.lastRotate < ROTATE_INTERVAL_MS || Math.abs(angleDelta(map.getBearing(), h)) < 2) return;
+  state.lastRotate = now;
+  const camera = { bearing: h, duration: ROTATE_INTERVAL_MS, easing: t => t };
+  if (state.lastCoords) camera.center = meCenter();
+  map.easeTo(camera);
+}
+
+function onCompass(h) {
+  if (state.mode !== 'heading' || performance.now() - state.gpsHeadingAt < GPS_HEADING_FRESH_MS) return;
+  applyHeading(h);
+}
+
+function fitWholeRoute() {
+  setMode('off');
+  map.setPadding(mapPadding('off'));
+  fitRoute(map, state.track);
 }
 
 // ---------- Parcours ----------
@@ -84,8 +129,7 @@ async function selectRoute(route) {
   $('route-name').textContent = route.name;
   setRoute(map, state.track, route.waypoints || []);
   profile.setTrack(state.track);
-  fitRoute(map, state.track);
-  setFollow(false);
+  fitWholeRoute();
   showTotals();
   renderBadge();
   if (state.lastCoords) onPosition({ coords: state.lastCoords });
@@ -291,17 +335,27 @@ function updateProgress(coords) {
 
 function onPosition({ coords }) {
   state.lastCoords = coords;
-  setMe(map, coords);
+  const gpsHeading = coords.speed > GPS_HEADING_MIN_SPEED && Number.isFinite(coords.heading) ? coords.heading : null;
+  if (gpsHeading !== null) state.gpsHeadingAt = performance.now();
+  setMe(map, coords, state.mode === 'heading' ? state.heading : null);
   if (state.track) updateProgress(coords);
   else setStatus('');
   const center = [coords.longitude, coords.latitude];
   if (!state.hadFix) {
     state.hadFix = true;
     const near = !state.track || snap(state.track, ...center).offset < NEAR_ROUTE_METERS;
-    if (near) { setFollow(true); map.jumpTo({ center, zoom: Math.max(map.getZoom(), 15) }); }
+    if (near) {
+      map.jumpTo({ center, zoom: Math.max(map.getZoom(), 15) });
+      setMode(localStorage.getItem('followMode') || 'north');
+    }
     return;
   }
-  if (state.follow) map.easeTo({ center, duration: 600 });
+  if (state.mode === 'heading' && gpsHeading !== null) {
+    state.lastRotate = 0;
+    applyHeading(gpsHeading);
+  } else if (state.mode !== 'off') {
+    map.easeTo({ center, duration: 600 });
+  }
 }
 
 function onGpsError(err) {
@@ -365,7 +419,7 @@ function onScrub(d) {
   if (d === null) return setCursor(map, null);
   const p = pointAtDistance(state.track, d);
   setCursor(map, p);
-  if (!map.getBounds().contains([p.lon, p.lat])) { setFollow(false); map.easeTo({ center: [p.lon, p.lat], duration: 300 }); }
+  if (!map.getBounds().contains([p.lon, p.lat])) { setMode('off'); map.easeTo({ center: [p.lon, p.lat], duration: 300 }); }
 }
 
 function bindUi() {
@@ -374,12 +428,23 @@ function bindUi() {
   $('drawer-close').onclick = closeDrawer;
   $('drawer-backdrop').onclick = closeDrawer;
   $('file-input').onchange = e => { const [f] = e.target.files; e.target.value = ''; if (f) importFile(f); };
-  $('fit-btn').onclick = () => { if (state.track) { setFollow(false); fitRoute(map, state.track); } };
+  $('fit-btn').onclick = () => { if (state.track) fitWholeRoute(); };
+  // Appuis successifs : suivi (dernier mode utilisé) → nord en haut ↔ carte orientée.
   $('locate-btn').onclick = () => {
     if (!state.lastCoords) { startGps(); return setStatus('Recherche du signal GPS…'); }
-    setFollow(true);
-    map.easeTo({ center: [state.lastCoords.longitude, state.lastCoords.latitude], zoom: Math.max(map.getZoom(), 15) });
+    if (state.mode === 'off') map.jumpTo({ zoom: Math.max(map.getZoom(), 15) });
+    const next = { off: localStorage.getItem('followMode') || 'north', north: 'heading', heading: 'north' }[state.mode];
+    setMode(next);
   };
+  $('north-btn').onclick = () => {
+    if (state.mode === 'heading') setMode('north');
+    else map.easeTo({ bearing: 0, duration: 300 });
+  };
+  map.on('rotate', () => {
+    const bearing = map.getBearing();
+    $('north-btn').hidden = Math.abs(bearing) < 1;
+    $('north-needle').style.transform = `rotate(${-bearing}deg)`;
+  });
   $('speed-input').value = flatSpeed();
   $('speed-input').onchange = e => {
     const v = parseFloat(e.target.value);
@@ -388,15 +453,19 @@ function bindUi() {
     refreshStats();
   };
   map.on('click', onMapClick);
-  map.on('dragstart', () => setFollow(false));
-  document.addEventListener('visibilitychange', () => (document.hidden ? stopGps() : startGps()));
+  map.on('dragstart', () => setMode('off'));
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { stopGps(); stopCompass(); return; }
+    startGps();
+    if (state.mode === 'heading') startCompass(onCompass);
+  });
 }
 
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
   await refreshOmtTemplate();
   map = await createMap('map');
-  map.setPadding({ top: 60, bottom: sheetHeight(), left: 0, right: 0 });
+  map.setPadding(mapPadding('off'));
   profile = createProfile($('profile'), onScrub);
   bindUi();
   const routes = await listRoutes();

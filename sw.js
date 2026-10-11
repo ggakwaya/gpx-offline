@@ -1,6 +1,6 @@
 // Service worker : appli disponible hors ligne + cache des tuiles de carte et d'altitude.
 
-const SHELL_CACHE = 'shell-v5';
+const SHELL_CACHE = 'shell-v6';
 const TILE_CACHE = 'tiles-v1';
 const FONT_RANGES = ['0-255', '256-511', '8192-8447'];
 const FONTS = ['noto-regular', 'noto-bold', 'noto-italic']
@@ -8,7 +8,7 @@ const FONTS = ['noto-regular', 'noto-bold', 'noto-italic']
   .concat(['fonts/noto-regular/9472-9727.pbf', 'fonts/noto-bold/9472-9727.pbf']);
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/gpx.js', 'js/map.js', 'js/match.js', 'js/offline.js', 'js/profile.js', 'js/store.js',
+  'js/app.js', 'js/gpx.js', 'js/heading.js', 'js/map.js', 'js/match.js', 'js/offline.js', 'js/profile.js', 'js/store.js',
   'vendor/maplibre-gl.js', 'vendor/maplibre-gl.css', 'vendor/maplibre-contour.min.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
   ...FONTS,
